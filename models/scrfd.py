@@ -16,11 +16,11 @@ class SCRFD:
     """
 
     def __init__(
-        self,
-        model_path: str,
-        input_size: Tuple[int] = (640, 640),
-        conf_thres: float = 0.5,
-        iou_thres: float = 0.4
+            self,
+            model_path: str,
+            input_size: Tuple[int] = (640, 640),
+            conf_thres: float = 0.5,
+            iou_thres: float = 0.4
     ) -> None:
         """SCRFD initialization
 

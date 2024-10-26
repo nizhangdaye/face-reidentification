@@ -19,13 +19,13 @@ def parse_args():
     parser.add_argument(
         "--det-weight",
         type=str,
-        default="./weights/det_10g.onnx",
+        default="./weights/det_500m.onnx",
         help="Path to detection model"
     )
     parser.add_argument(
         "--rec-weight",
         type=str,
-        default="./weights/w600k_r50.onnx",
+        default="./weights/w600k_mbf.onnx",
         help="Path to recognition model"
     )
     parser.add_argument(
@@ -106,12 +106,12 @@ def build_targets(detector, recognizer, params: argparse.Namespace) -> List[Tupl
 
 
 def frame_processor(
-    frame: np.ndarray,
-    detector: SCRFD,
-    recognizer: ArcFace,
-    targets: List[Tuple[np.ndarray, str]],
-    colors: dict,
-    params: argparse.Namespace
+        frame: np.ndarray,
+        detector: SCRFD,
+        recognizer: ArcFace,
+        targets: List[Tuple[np.ndarray, str]],
+        colors: dict,
+        params: argparse.Namespace
 ) -> np.ndarray:
     """
     Process a video frame for face detection and recognition.
@@ -127,11 +127,15 @@ def frame_processor(
     Returns:
         np.ndarray: The processed video frame.
     """
-    bboxes, kpss = detector.detect(frame, params.max_num)
+    # 将 fraem 缩放 1/4
+    new_frame = cv2.resize(frame, (0, 0), fx=0.25, fy=0.25)
+    bboxes, kpss = detector.detect(new_frame, params.max_num)
 
     for bbox, kps in zip(bboxes, kpss):
         *bbox, conf_score = bbox.astype(np.int32)
-        embedding = recognizer(frame, kps)
+        # 缩放回原尺寸
+        bbox = [x * 4 for x in bbox]
+        embedding = recognizer(new_frame, kps)
 
         max_similarity = 0
         best_match_name = "Unknown"
@@ -140,6 +144,8 @@ def frame_processor(
             if similarity > max_similarity and similarity > params.similarity_thresh:
                 max_similarity = similarity
                 best_match_name = name
+                if similarity > 0.4:
+                    break
 
         if best_match_name != "Unknown":
             color = colors[best_match_name]
@@ -159,7 +165,7 @@ def main(params):
     targets = build_targets(detector, recognizer, params)
     colors = {name: (random.randint(0, 256), random.randint(0, 256), random.randint(0, 256)) for _, name in targets}
 
-    cap = cv2.VideoCapture(params.source)
+    cap = cv2.VideoCapture(params.source)  # if source is an integer, it is treated as a webcam id
     if not cap.isOpened():
         raise Exception("Could not open video or webcam")
 
@@ -170,6 +176,7 @@ def main(params):
     out = cv2.VideoWriter("output_video.mp4", cv2.VideoWriter_fourcc(*"mp4v"), fps, (width, height))
 
     while True:
+        time_start = cv2.getTickCount()
         ret, frame = cap.read()
         if not ret:
             break
@@ -178,7 +185,11 @@ def main(params):
         out.write(frame)
         cv2.imshow("Frame", frame)
 
-        if cv2.waitKey(1) & 0xFF == ord("q"):
+        print(f"FPS: {cv2.getTickFrequency() / (cv2.getTickCount() - time_start)}")
+
+        # 如果按下q键则退出
+        key = cv2.waitKey(1) & 0xff
+        if key == ord('q'):
             break
 
     cap.release()
